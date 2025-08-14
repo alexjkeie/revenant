@@ -101,6 +101,19 @@ async def parse_discordservers(html):
         results.append({"name": name,"desc": desc,"tags": tags,"link": link,"members": members,"icon": icon})
     return results
 
+# Placeholder: parse_topgg, parse_discordme, etc. can be added here similarly
+
+intro_texts = [
+    "Revenant is crawling through the web, finding victims...",
+    "Scanning the shadows for my next kill...",
+    "Targets are hiding. I’ll drag them into the light.",
+    "I smell fear in these servers. Let’s hunt.",
+    "Hunting servers like prey in the dark.",
+    "The hunt begins. No one is safe.",
+    "Slicing through the web for suspicious activity.",
+    "My claws reach far and wide. Targets detected soon."
+]
+
 @tree.command(name="setlogchannel", description="Set where Revenant logs found servers")
 @app_commands.describe(channel="Select the log channel")
 @app_commands.checks.has_permissions(manage_guild=True)
@@ -116,61 +129,58 @@ async def setlogchannel_error(interaction, error):
     try: await interaction.response.send_message("You lack permission.", ephemeral=True)
     except: pass
 
-@tree.command(name="scan", description="Scan multiple sites for suspicious servers")
+@tree.command(name="scan", description="Scan tons of sites for servers")
 async def scan(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     ch_id = get_log_channel(interaction.guild.id)
     ch = interaction.guild.get_channel(ch_id) if ch_id else None
 
-    intro_texts = [
-        "Revenant is crawling through the web, finding victims...",
-        "Scanning the shadows for my next kill...",
-        "Targets are hiding. I’ll drag them into the light.",
-        "I smell fear in these servers. Let’s hunt.",
-        "Hunting servers like prey in the dark.",
-        "The hunt begins. No one is safe.",
-        "Slicing through the web for suspicious activity.",
-        "My claws reach far and wide. Targets detected soon."
-    ]
     if ch:
         await ch.send(embed=discord.Embed(description=random.choice(intro_texts),
                                           color=0x8b0000,
                                           timestamp=datetime.now(timezone.utc)))
-    async with aiohttp.ClientSession() as session:
-        all_servers = []
 
-        # Disboard pages
+    total_scanned = 0
+    total_flagged = 0
+    all_servers = []
+
+    async with aiohttp.ClientSession() as session:
+        # Disboard
         for page in range(1, 6):
             html = await fetch_page(session, f"https://disboard.org/servers?sort=recent&page={page}")
             all_servers.extend(await parse_disboard(html))
 
-        # DiscordServers pages
+        # DiscordServers
         for page in range(1, 6):
             html = await fetch_page(session, f"https://discordservers.com/browse?page={page}")
             all_servers.extend(await parse_discordservers(html))
 
-        found = False
+        # Top.gg and Discord.me parsing functions can be added here similarly
+
         for s in all_servers:
+            total_scanned += 1
             score, reasons = risk_score(s["name"], s["desc"], s["tags"], s["members"])
             if score >= 2 and ch:
-                found = True
-                e = discord.Embed(title="Suspicious Server Detected", color=0xdc143c,
-                                  timestamp=datetime.now(timezone.utc))
-                e.add_field(name="Server", value=f"{s['name']}", inline=False)
-                e.add_field(name="Server Link", value=f"[Join]({s['link']})", inline=False)
+                total_flagged += 1
+                e = discord.Embed(title="Suspicious Server Detected", color=0xdc143c, timestamp=datetime.now(timezone.utc))
+                e.add_field(name="Server", value=s["name"], inline=False)
+                e.add_field(name="Link", value=f"[Join]({s['link']})", inline=False)
                 e.add_field(name="Members", value=str(s["members"]), inline=True)
                 e.add_field(name="Tags", value=", ".join(s["tags"]) or "None", inline=False)
-                e.add_field(name="Risk Score", value=str(score), inline=True)
+                e.add_field(name="Score", value=str(score), inline=True)
                 e.add_field(name="Reasons", value=", ".join(reasons) or "None", inline=False)
                 if s["icon"]:
                     e.set_thumbnail(url=s["icon"])
                 await ch.send(embed=e)
 
-        if not found and ch:
-            e = discord.Embed(title="No Victims Found",
-                              description="Revenant reports: no victims yet...",
-                              color=0x8b0000, timestamp=datetime.now(timezone.utc))
-            await ch.send(embed=e)
+    if ch:
+        summary = discord.Embed(title="Scan Complete", color=0x8b0000)
+        summary.add_field(name="Total Servers Scanned", value=str(total_scanned), inline=True)
+        summary.add_field(name="Suspicious Servers", value=str(total_flagged), inline=True)
+        if total_flagged == 0:
+            summary.description = "Revenant reports: no victims yet..."
+        await ch.send(embed=summary)
+
     try:
         await interaction.followup.send("Scan finished.", ephemeral=True)
     except: pass
