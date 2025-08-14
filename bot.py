@@ -2,16 +2,19 @@ import os, json, random, aiohttp, asyncio
 from datetime import datetime, timezone
 from bs4 import BeautifulSoup
 import discord
-from discord.ext import commands
+from discord import app_commands
 
 TOKEN = os.getenv("DISCORD_TOKEN", "PUT_TOKEN_HERE")
 LOG_FILE = "revenant_log_channels.json"
 
+# Intents
 intents = discord.Intents.default()
 intents.guilds = True
 intents.messages = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+# Bot and command tree
+bot = discord.Client(intents=intents)
+tree = app_commands.CommandTree(bot)
 
 # Ensure JSON log file exists
 if not os.path.exists(LOG_FILE):
@@ -82,21 +85,24 @@ async def fetch_disboard(session, pages=3):
                 servers.append({"name":name,"desc":desc,"tags":tags,"link":link,"members":members,"icon":icon})
     return servers
 
-@bot.command()
-async def setlogchannel(ctx, channel: discord.TextChannel):
-    set_log_channel(ctx.guild.id, channel.id)
-    await ctx.send(f"Revenant log channel set to {channel.mention}")
+# Slash command: setlogchannel
+@tree.command(name="setlogchannel", description="Set where Revenant logs found servers")
+@app_commands.describe(channel="Select the log channel")
+async def setlogchannel(interaction: discord.Interaction, channel: discord.TextChannel):
+    set_log_channel(interaction.guild.id, channel.id)
+    await interaction.response.send_message(f"Revenant log channel set to {channel.mention}", ephemeral=True)
 
-@bot.command()
-async def scan(ctx):
-    log_channel_id = get_log_channel(ctx.guild.id)
+# Slash command: scan
+@tree.command(name="scan", description="Scan Disboard for suspicious servers")
+async def scan(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    log_channel_id = get_log_channel(interaction.guild.id)
     if not log_channel_id:
-        await ctx.send("Log channel not set. Use !setlogchannel <channel>.")
+        await interaction.followup.send("Log channel not set. Use /setlogchannel first.", ephemeral=True)
         return
-
-    log_channel = ctx.guild.get_channel(log_channel_id)
+    log_channel = interaction.guild.get_channel(log_channel_id)
     if not log_channel:
-        await ctx.send("Invalid log channel. Set a valid channel first.")
+        await interaction.followup.send("Invalid log channel. Set a valid channel first.", ephemeral=True)
         return
 
     intro_texts = [
@@ -137,6 +143,15 @@ async def scan(ctx):
     if total_flagged == 0:
         summary.description = "Revenant reports: no victims yet..."
     await log_channel.send(embed=summary)
-    await ctx.send("Scan finished.")
+    await interaction.followup.send("Scan finished.", ephemeral=True)
+
+# Sync tree on ready
+@bot.event
+async def on_ready():
+    try:
+        await tree.sync()
+    except:
+        pass
+    print(f"Logged in as {bot.user}")
 
 bot.run(TOKEN)
